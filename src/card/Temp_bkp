@@ -1,0 +1,188 @@
+package card;
+
+import javacard.framework.APDU;
+import javacard.framework.OwnerPIN;
+import javacard.framework.Applet;
+import javacard.framework.ISO7816;
+import javacard.framework.ISOException;
+import javacard.framework.Util;
+import javacard.framework.JCSystem;
+
+public class Mycard extends Applet {
+    /* Constants */
+    // CLA
+    public static final byte CLA_MONAPPLET = (byte) 0xB0;
+
+    // INS
+    public static final byte INS_MASK = 0x70;
+    public static final byte INS_ENROLL_MASK = 0x00;
+    public static final byte INS_ENROLL_name = 0x01;
+    public static final byte INS_ENROLL_surname = 0x02;
+    public static final byte INS_ENROLL_PIN = 0x03;
+
+    public static final byte INS_ENTER_PIN = 0x10;
+    public static final byte INS_DEBIT = 0x20;
+    public static final byte INS_CREDIT = 0x30;
+
+    public static final byte INS_GET_MASK = 0x40;
+    public static final byte INS_GET_BAL = 0x41;
+    public static final byte INS_RESET = 0x70;
+    
+    // Valid State
+    public static final byte STATE_RESET = 0x00;
+    public static final byte STATE_ENROLL = 0x01;
+    public static final byte STATE_USE = 0x02;
+    public static final byte STATE_INVALID = 0x7F;
+    
+    // MAX values
+    private static final byte MAX_PIN_RETRY = 5;
+    private static final byte PIN_SIZE = 6;
+    
+    // Messages
+    private static final byte[] MESS_4 = {'B','L','O','C','K','E','D'};
+    
+    // Variable declaration
+    OwnerPIN pin;
+    private static final byte[] name = {0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0};
+    byte[] surname;
+    short balance;
+    short uniqueID;
+    // state machine for the card
+    // RESET->ENROLL->USE{credit<->debit}->RESET
+    byte state;
+
+    public static final byte INS_OUTPUT_MESS1 = 0x02;
+    public static final byte INS_OUTPUT_MESS2 = 0x01;
+        
+    private static final byte[] MESS_1 = {'H','e','l','l','o',' ','m','y',' ','n','a','m','e',' ','i','s',' ','L','e','o','n'};
+    private static final byte[] MESS_2 = {'T','h','e',' ','v','e','r','s','i','o','n',' ','o','f',' ','m','y',' ','J','a','v','a','C','a','r','d',' ','A','P','I',' ','i','s',':',' '};
+    
+    /* Constructor */
+    private Mycard() {
+	register(); //Mandatory to register 
+    }
+    
+    public static void install(byte bArray[], short bOffset, byte bLength) throws ISOException {
+	new Mycard();
+    }
+
+    /* Enrollment Funtions */
+    private void setname(APDU apdu, byte[] buffer, short byteRead) {
+        /*short bytesLeft = (short) (buffer[ISO7816.OFFSET_LC] & 0x00FF);
+        while ( bytesLeft > 0){
+            // enter code here to process the data previously read in buffer[5]
+            // to buffer[readCount+4];
+            bytesLeft -= byteRead;
+            readCount = apdu.receiveBytes(ISO7816.OFFSET_CDATA); // read more APDU data
+        }
+        short echoOffset = (short)0;
+        while ( byteRead > 0 ) {
+            Util.arrayCopyNonAtomic(buffer, ISO7816.OFFSET_CDATA, name, echoOffset, byteRead);
+            echoOffset += byteRead;
+            byteRead = apdu.receiveBytes(ISO7816.OFFSET_CDATA);
+        }
+        */
+        
+	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, name, (short)0, (short)byteRead);
+        
+        apdu.setOutgoing();
+        apdu.setOutgoingLength( (short)5);
+		byte[] buff = apdu.getBuffer(); //To parse the apdu
+	    Util.arrayCopyNonAtomic(name,
+                                    (short)0,
+                                    buffer,
+                                    (short)0,
+                                    (short)name.length);
+
+        /*
+	    apdu.setOutgoingAndSend((short)0, (short)name.length);
+	    Util.arrayCopyNonAtomic(creditAmount,
+                                    (short)0,
+                                    buffer,
+                                    (short)0,
+                                    (short)1);
+        //name[0] = 'A';
+        buff[0] = (byte)(byteRead + '0');//name[0];
+        buff[1] = 'B';
+        buff[2] = name[0];
+        buff[3] = //name[0];
+        buff[4] = 'B';//name[0];
+        buff[5] = 'B';//name[0];
+        buff[6] = 'A';//name[0];
+        */
+        
+
+	    apdu.sendBytes((short)0, (short)(5));
+    }
+    private void enroll(APDU apdu) {
+		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+
+        byte numBytes =
+            (byte)(buffer[ISO7816.OFFSET_LC]);
+
+        /*byte byteRead =
+            (byte)(apdu.setIncomingAndReceive());
+        if ( numBytes != byteRead )
+           ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        */
+
+		switch (buffer[ISO7816.OFFSET_INS]) {
+            case INS_ENROLL_name: 
+                setname(apdu, buffer, numBytes);
+                break;
+            case INS_ENROLL_surname: 
+                break;
+            case INS_ENROLL_PIN: 
+                break;
+        }
+	    
+    
+    }
+    public void process(APDU apdu) throws ISOException {
+    
+		if (this.selectingApplet()) return; //If you are selecting this applet. 
+    
+		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        
+		if (buffer[ISO7816.OFFSET_CLA] != CLA_MONAPPLET) {
+                ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+		}
+		
+		switch (buffer[ISO7816.OFFSET_INS] & INS_MASK) {
+            case INS_ENROLL_MASK: 
+                enroll(apdu);
+                break;
+	case INS_OUTPUT_MESS1:
+
+	    Util.arrayCopyNonAtomic(MESS_1,
+                                    (short)0,
+                                    buffer,
+                                    (short)0,
+                                    (short)MESS_1.length);
+
+	    apdu.setOutgoingAndSend((short)0, (short)MESS_1.length);
+	    
+	    break;
+
+	case INS_OUTPUT_MESS2:
+	    
+	    Util.arrayCopyNonAtomic(MESS_2,
+                                    (short)0,
+                                    buffer,
+                                    (short)0,
+                                    (short)MESS_2.length);
+
+	    short ver = JCSystem.getVersion();
+
+	    buffer[(short)MESS_2.length] = (byte)ver;
+	    buffer[(short)(MESS_2.length+1)] = (byte)(ver >> 8);
+	    
+	    apdu.setOutgoingAndSend((short)0, (short)(MESS_2.length+2));
+	    
+	    break;
+	    
+	default:
+	    ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+	}
+    }
+}
