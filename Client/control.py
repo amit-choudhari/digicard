@@ -32,6 +32,6 @@ class Control:
         print("")
         return out
 
-    def disconnect():
+    def disconnect(self):
         #Disconnect the reader
         self.connection.disconnect()
