@@ -1,6 +1,11 @@
 import inspect
 import array
 from control import Control
+from time import sleep
+
+from smartcard.CardMonitoring import CardMonitor, CardObserver
+from smartcard.util import toHexString
+from crypto import secure_channel
 
 #          CLA  INS  P1   P2   Lc  |--------Data------------->
 AID =     [0x00,0xA4,0x04,0x00,0x08,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x07]
@@ -22,10 +27,37 @@ INS_DEBIT = 0x20
 INS_CREDIT = 0x30
 INS_GET_BAL = 0x41;
 
+class PrintObserver(CardObserver):
+    """A simple card observer that is notified
+    when cards are inserted/removed from the system and
+    prints the list of cards
+    """
+    def __init__ (self, amt):
+        self.tx_amt = amt
+        self.state = 0
+
+    def update(self, observable, actions):
+        (addedcards, removedcards) = actions
+        for card in addedcards:
+            print("+Inserted: ")
+            if self.state == 2:
+                session = user_apps()
+                session.verify_pin()
+                session.credit(self.tx_amt)
+                self.tx_amt = 0
+                session.close()
+                print("+transfered: ")
+            else:
+                self.state = 1
+        for card in removedcards:
+            self.state = 2
+            print("-Removed: ")
+
 class user_apps:
     def __init__ (self):
         self.card = Control()
         self.card.connect()
+        self.tx_amt = 0
 
     def close(self):
         self.card.disconnect()
@@ -37,7 +69,9 @@ class user_apps:
         ins = [INS_ENROLL_name]
         data = name
         size = [len(name)]
-        self.card.send(ins, data, size)
+        res = self.card.send(ins, data, size)
+        print(res)
+        print("-------")
     
     def enroll_surname(self):
         print(inspect.stack()[0].function)
@@ -46,7 +80,9 @@ class user_apps:
         ins = [INS_ENROLL_surname]
         data = surname
         size = [len(surname)]
-        self.card.send(ins, data, size)
+        res = self.card.send(ins, data, size)
+        print(res)
+        print("-------")
     
     def enroll_pin(self):
         print(inspect.stack()[0].function)
@@ -55,7 +91,9 @@ class user_apps:
         ins = [INS_ENROLL_PIN]
         data = pin
         size = [len(pin)]
-        self.card.send(ins, data, size)
+        res = self.card.send(ins, data, size)
+        print("Enrolled Pin",res)
+        print("-------")
     
     def verify_pin(self):
         print(inspect.stack()[0].function)
@@ -64,25 +102,34 @@ class user_apps:
         ins = [INS_VERIFY_PIN]
         data = pin
         size = [len(pin)]
-        self.card.send(ins, data, size)
+        res = self.card.send(ins, data, size)
+        print("verified pin",res)
+        print("-------")
     
-    def debit(self):
+    def debit(self, amt=0):
         print(inspect.stack()[0].function)
-        amt = [int(input("Enter amount:"))]
+        if amt == 0:
+            amt = [int(input("Enter amount:"))]
         print(amt)
         ins = [INS_DEBIT]
         data = amt
         size = [len(amt)]
-        self.card.send(ins, data, size)
+        s_amt = self.card.send(ins, data, size)
+        print("Debit:",s_amt)
+        print("-------")
+        return s_amt
     
-    def credit(self):
+    def credit(self, amt=0):
         print(inspect.stack()[0].function)
-        amt = [int(input("Enter amount:"))]
-        print(amt)
+        if amt == 0:
+            amt = [int(input("Enter amount:"))]
         ins = [INS_CREDIT]
         data = amt
         size = [len(amt)]
-        self.card.send(ins, data, size)
+        s_amt = self.card.send(ins, data, size)
+        print("Credit: ",s_amt)
+        print("-------")
+        return s_amt
     
     def balance(self):
         print(inspect.stack()[0].function)
@@ -91,8 +138,27 @@ class user_apps:
         ins = [INS_GET_BAL]
         data = amt
         size = [len(amt)]
-        self.card.send(ins, data, size)
+        amt = self.card.send(ins, data, size)
+        print("Balance: ",amt)
+        print("-------")
+        return amt
         
     def exchange(self):
         print(inspect.stack()[0].function)
-        self.card.send(ins, data, size)
+        # Debit
+        amt = self.debit()
+        self.close()
+        # Initiate card monitor
+        cardmonitor = CardMonitor()
+        cardobserver = PrintObserver(amt)
+        cardmonitor.addObserver(cardobserver)
+        sleep(20)
+        # TODO check if successful, else revert money
+
+        # Stop monitor
+        cardmonitor.deleteObserver(cardobserver)
+        print("End session ",amt)
+
+    def test(self):
+        sc  = secure_channel(self.card)
+        sc.open()

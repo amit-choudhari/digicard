@@ -29,7 +29,7 @@ class Control:
         print("tx:",payload)
         out, sw1, sw2 = self.connection.transmit(payload)
         print("rx:",out)
-        print("")
+        #print("")
         return out
 
     def disconnect(self):

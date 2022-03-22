@@ -14,6 +14,7 @@ commands
 7. Balance
 8. Exchange
 9. Exit
+0. Test
 =======================
 """
 ENROLL_NAME = 1
@@ -25,30 +26,44 @@ CREDIT = 6
 BALANCE = 7
 EXCHANGE = 8
 EXIT = 9
+TEST = 0
+
 
 def enroll_name(session):
     session.enroll_name()
+    return False
 
 def enroll_surname(session):
     session.enroll_surname()
+    return False
 
 def enroll_pin(session):
     session.enroll_pin()
+    return False
 
 def verify_pin(session):
     session.verify_pin()
+    return False
 
 def debit(session):
     session.debit()
+    return False
 
 def credit(session):
     session.credit()
+    return False
 
 def exchange(session):
     session.exchange()
+    return True
 
 def balance(session):
     session.balance()
+    return False
+
+def test(session):
+    session.test()
+    return False
 
 options = {
         ENROLL_NAME : enroll_name,
@@ -59,11 +74,12 @@ options = {
         CREDIT : credit,
         BALANCE : balance,
         EXCHANGE : exchange,
+        TEST : test,
 }
 def main():
-    exit = False
     print(HELP)
     session = user_apps()
+    exit = False
 
     while exit != True:
         cmd = int(input("Select cmd:"))
@@ -71,7 +87,7 @@ def main():
             session.close()
             exit = True
         else:
-            options[cmd](session)
+            exit = options[cmd](session)
         print()
 
 
