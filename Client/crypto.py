@@ -22,6 +22,7 @@ P1_P2 =   [0x00, 0x00]
 # INS
 INS_AUTH_INIT = 0x50
 INS_AUTH_FINI = 0x51
+INS_GET_BAL = 0x41;
                     
 master_key = [0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0x00,0x01]
 
@@ -47,56 +48,6 @@ class Crypto:
     def gen_mac(self):
         pass
 
-def macIso9797_alg3(key, msg, pad_start):
-
-    key_len = int(len(key)/2)
-    print(key_len)
-    if (key_len != 16):
-        raise ValueError("Key length should be 16 digits")
-    # force header  padding
-    msg += pad_start
-
-    # padding with "00"
-    lenRestOfData = int((len(msg)/2) % 8)
-    msg += "00"*(8-lenRestOfData)
-
-    loopNum = int((len(msg)/2) / 8)
-
-    bufferOutput = binascii.unhexlify("00"*8)
-    IV = '\x00'*8
-
-    keya = binascii.unhexlify(key[0:16])
-    keyb = binascii.unhexlify(key[16:])
-
-    print ("\n")
-    i = 0
-    for i in range (0, loopNum):
-        tdesa = DES.new(keya, DES.MODE_ECB, IV)
-
-        data = msg[i*16:i*16+16]
-        print(str(i) + "=" + data)
-
-        x = bufferOutput
-        bufferOutput = strxor(binascii.unhexlify(data), bufferOutput)
-        print (data + " xor " + binascii.hexlify(x).decode('utf-8').upper() + " = " + binascii.hexlify(bufferOutput).decode('utf-8').upper())
-
-        bufferOutput = tdesa.encrypt(bufferOutput)
-        print (" encrypted val = " + binascii.hexlify(bufferOutput).decode('utf-8').upper())
-
-        print ("\n")
-
-    tdesb = DES.new(keyb, DES.MODE_ECB, IV)
-    bufferOutput = tdesb.decrypt(bufferOutput)
-
-    print (" decrypted val = " + binascii.hexlify(bufferOutput).decode('utf-8').upper())
-
-    tdesa = DES.new(keya, DES.MODE_ECB, IV)
-    bufferOutput = tdesa.encrypt(bufferOutput)
-
-    print (" encrypted val = " + binascii.hexlify(bufferOutput).decode('utf-8').upper())
-
-    return bufferOutput
-
 class secure_channel:
     def __init__ (self, card):
         self.card = card
@@ -115,7 +66,7 @@ class secure_channel:
         self.sessionKey = self.cipher_des.encrypt(chal_hc)
         print(list(self.sessionKey))
         print(out[len(chal_h)*2:])
-        print(macIso9797_alg3(list(self.sessionKey), chal_hc,"80"))
+        self.cipher_session = Crypto('DES', self.sessionKey)
         pass
 
     def close(self):
@@ -124,5 +75,15 @@ class secure_channel:
     def gen_signature(self):
         pass
 
-    def send(self):
+    def send(self, card):
+        print(inspect.stack()[0].function)
+        amt = []
+        print(amt)
+        ins = [INS_GET_BAL]
+        data = amt
+        size = [len(amt)]
+        amt = card.send(ins, data, size)
+        print("Balance: ",amt)
+        print("-------")
+        return amt
         pass

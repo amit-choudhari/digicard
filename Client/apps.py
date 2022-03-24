@@ -18,14 +18,16 @@ GET_BAL = [0xB0,0x41,0x00,0x00,0x01,0x00]
 P1_P2 =   [0x00, 0x00]
 
 # INS
-INS_ENROLL_name = 0x00
-INS_ENROLL_surname = 0x01
+INS_ENROLL_name = 0x01
+INS_ENROLL_surname = 0x02
 INS_ENROLL_PIN = 0x03
+INS_ENROLL_UID = 0x04
                     
 INS_VERIFY_PIN = 0x10
 INS_DEBIT = 0x20
 INS_CREDIT = 0x30
 INS_GET_BAL = 0x41;
+INS_GET_INFO = 0x42;
 
 class PrintObserver(CardObserver):
     """A simple card observer that is notified
@@ -94,7 +96,31 @@ class user_apps:
         res = self.card.send(ins, data, size)
         print("Enrolled Pin",res)
         print("-------")
+
+    def enroll_uid(self):
+        print(inspect.stack()[0].function)
+        uid = array.array('b',input("Enter New UID:").encode()).tolist()
+        print(uid)
+        ins = [INS_ENROLL_UID]
+        data = uid
+        size = [len(uid)]
+        res = self.card.send(ins, data, size)
+        print("Enrolled UID",res)
+        print("-------")
     
+    def get_details(self):
+        print(inspect.stack()[0].function)
+        mess = ''
+        ins = [INS_GET_INFO]
+        data = []
+        size = [0]
+        res = self.card.send(ins, data, size)
+        for e in res:
+            mess += chr(e)
+        print("INFO: ",mess)
+        print("-------")
+        pass
+
     def verify_pin(self):
         print(inspect.stack()[0].function)
         pin = array.array('b',input("Enter PIN:").encode()).tolist()
@@ -162,3 +188,4 @@ class user_apps:
     def test(self):
         sc  = secure_channel(self.card)
         sc.open()
+        sc.send(self.card)
