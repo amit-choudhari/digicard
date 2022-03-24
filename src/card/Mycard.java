@@ -16,6 +16,7 @@ import javacard.security.RSAPublicKey;
 import javacard.security.RandomData;
 import javacard.security.Signature;
 import javacardx.crypto.Cipher;
+import javacard.security.MessageDigest;
 
 public class Mycard extends Applet {
 
@@ -29,6 +30,7 @@ public class Mycard extends Applet {
     public static final byte INS_ENROLL_name = 0x01;
     public static final byte INS_ENROLL_surname = 0x02;
     public static final byte INS_ENROLL_PIN = 0x03;
+    public static final byte INS_ENROLL_UID = 0x04;
 
     public static final byte INS_ENTER_PIN = 0x10;
     public static final byte INS_DEBIT = 0x20;
@@ -36,6 +38,7 @@ public class Mycard extends Applet {
 
     public static final byte INS_GET_MASK = 0x40;
     public static final byte INS_GET_BAL = 0x41;
+    public static final byte INS_GET_INFO = 0x42;
     
     public static final byte INS_AUTH_MASK = 0x50;
     public static final byte INS_AUTH_INIT = 0x50;
@@ -67,12 +70,12 @@ public class Mycard extends Applet {
     private static final byte[] key = {'B','L','O','C','K','E','D'};
     
     // Variable declaration
-    OwnerPIN pin;
+    OwnerPIN pin = null;
     //byte[] name;
-    private static byte[] name;
-    private static byte[] surname;
+    private static byte[] name = {};
+    private static byte[] surname = {};
     private static short balance = 0;
-    private static short uniqueID;
+    private static byte[] uniqueID = {};
     // state machine for the card
     // RESET->ENROLL->USE{credit<->debit}->RESET
     private static byte state;
@@ -81,9 +84,6 @@ public class Mycard extends Applet {
     private byte[] hostChallenge;
     private Signature signature;
     final static short CHALLENGE_LENGTH = (short) 4;
-    /**
-     * Unique ID length
-     */
     final static short UID_LENGTH = (short) 8;
     /**
      * Unique ID
@@ -96,6 +96,8 @@ public class Mycard extends Applet {
     private byte[] keyDerivationData; // Transient
     private byte[] sessionKeyData; // Transient
     private DESKey sessionKey; // Transient key
+    private MessageDigest m_messagedigest;
+
 
 
     /* Constructor */
@@ -118,6 +120,7 @@ public class Mycard extends Applet {
         signature = Signature.getInstance(Signature.ALG_DES_MAC8_ISO9797_M2,
                 false);
 
+        state = STATE_ENROLL;
 	    register(); //Mandatory to register 
     }
     
@@ -126,46 +129,24 @@ public class Mycard extends Applet {
     //----------------------
 
     //Enrollment Funtions
-    private void setname(APDU apdu, byte[] buffer, short byteRead) {
+    private byte[] setname(APDU apdu, byte[] buffer, short byteRead) {
 
+		byte[] buff = apdu.getBuffer(); //To parse the apdu
         name = new byte[byteRead];
         //read name
 	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, name, (short)0, byteRead);
         
-        apdu.setOutgoing();
-        apdu.setOutgoingLength(byteRead);
-		byte[] buff = apdu.getBuffer(); //To parse the apdu
-
-        // send the buffer back
-	    Util.arrayCopyNonAtomic(name,
-                                    (short)0,
-                                    buff,
-                                    (short)0,
-                                    (short)name.length);
-
-	    apdu.sendBytes((short)0, (short)(name.length));
+        return name;
     }
 
-    private void setsurname(APDU apdu, byte[] buffer, short byteRead) {
+    private byte[] setsurname(APDU apdu, byte[] buffer, short byteRead) {
         surname = new byte[byteRead];
         //read name
 	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, surname, (short)0, byteRead);
-        
-        apdu.setOutgoing();
-        apdu.setOutgoingLength(byteRead);
-		byte[] buff = apdu.getBuffer(); //To parse the apdu
-
-        // send the buffer back
-	    Util.arrayCopyNonAtomic(surname,
-                                    (short)0,
-                                    buff,
-                                    (short)0,
-                                    (short)surname.length);
-
-	    apdu.sendBytes((short)0, (short)(surname.length));
+        return surname;
     }
 
-    private void setPIN(APDU apdu, byte[] buffer, short byteRead) {
+    private byte[] setPIN(APDU apdu, byte[] buffer, short byteRead) {
 		byte[] buf = apdu.getBuffer(); //To parse the apdu
         pin = new OwnerPIN(MAX_PIN_RETRY, PIN_SIZE);
         byte[] arr = {(byte)byteRead};
@@ -176,21 +157,24 @@ public class Mycard extends Applet {
         // The installation parameters contain the PIN
         // initialization value
         pin.update(buffer, (short)(ISO7816.OFFSET_CDATA), (byte)byteRead);
-	    Util.arrayCopyNonAtomic(arr,
-                                    (short)0,
-                                    buf,
-                                    (short)0,
-                                    (short)1);
-        apdu.setOutgoingAndSend((short)0, (short)1);
+        return arr;
+    }
 
+    private byte[] setUID(APDU apdu, byte[] buffer, short byteRead) {
+        uniqueID = new byte[byteRead];
+	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, uniqueID, (short)0, byteRead);
+        return uniqueID;
     }
 
     private void enroll(APDU apdu) {
         //TODO check state
 
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        byte[] data = {};
 
         byte numBytes = buffer[ISO7816.OFFSET_LC];
+        if (state != STATE_ENROLL)
+            return;
 
         /*byte byteRead =
             (byte)(apdu.setIncomingAndReceive());
@@ -200,17 +184,26 @@ public class Mycard extends Applet {
 
 		switch (buffer[ISO7816.OFFSET_INS]) {
             case INS_ENROLL_name: 
-                setname(apdu, buffer, numBytes);
+                data = setname(apdu, buffer, numBytes);
                 break;
             case INS_ENROLL_surname: 
-                setsurname(apdu, buffer, numBytes);
+                data = setsurname(apdu, buffer, numBytes);
                 break;
             case INS_ENROLL_PIN: 
-                setPIN(apdu, buffer, numBytes);
+                data = setPIN(apdu, buffer, numBytes);
+                break;
+            case INS_ENROLL_UID: 
+                data = setUID(apdu, buffer, numBytes);
                 break;
         }
-        // TODO change state
-
+        if (name.length > 0 && surname.length > 0 && pin != null && uniqueID.length > 0)
+            state = STATE_USE;
+	    Util.arrayCopyNonAtomic(data,
+                                    (short)0,
+                                    buffer,
+                                    (short)0,
+                                    (short)data.length);
+        apdu.setOutgoingAndSend((short)0, (short)data.length);
     }
 
     /* Credit Funtions */
@@ -295,24 +288,60 @@ public class Mycard extends Applet {
         byte byteRead = buffer[ISO7816.OFFSET_LC];
 
         // check pin verified
-        //if (!pin.isValidated())
-        //    ISOException.throwIt(SW_INVALID_TRANSACTION);
+        if (!pin.isValidated())
+            ISOException.throwIt(SW_INVALID_TRANSACTION);
 
-        //apdu.setOutgoing();
-        //apdu.setOutgoingLength((short)PIN_SUCCESS.length);
         buffer[0] = (byte)(balance >> 8);
         buffer[1] = (byte)(balance & 0xFF);
-	    /*Util.arrayCopyNonAtomic(PIN_SUCCESS,
-                                    (short)0,
-                                    buffer,
-                                    (short)0,
-                                    (short)PIN_SUCCESS.length);
-         */
         apdu.setOutgoingAndSend((short)0, (short)2);
+    }
+    
+    private void getinfo(APDU apdu) {
+		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        short offset = 0;
+        byte[] nextline = {0x0A};
 
+	    Util.arrayCopyNonAtomic(uniqueID, (short)0, buffer, offset, (short)uniqueID.length);
+        offset += uniqueID.length;
+	    Util.arrayCopyNonAtomic(nextline, (short)0, buffer, offset, (short)nextline.length);
+        offset += nextline.length;
+
+	    Util.arrayCopyNonAtomic(name, (short)0, buffer, offset, (short)name.length);
+        offset += name.length;
+	    Util.arrayCopyNonAtomic(nextline, (short)0, buffer, offset, (short)nextline.length);
+        offset += nextline.length;
+
+	    Util.arrayCopyNonAtomic(surname, (short)0, buffer, offset, (short)surname.length);
+        offset += surname.length;
+	    Util.arrayCopyNonAtomic(nextline, (short)0, buffer, offset, (short)nextline.length);
+        offset += nextline.length;
+
+        apdu.setOutgoingAndSend((short)0, offset);
 
     }
+    private void get(APDU apdu) {
+		byte[] buffer = apdu.getBuffer(); //To parse the apdu
 
+		switch (buffer[ISO7816.OFFSET_INS]) {
+            case INS_GET_BAL: 
+                getbalance(apdu);
+                break;
+            case INS_GET_INFO: 
+                getinfo(apdu);
+                break;
+        }
+    }
+
+
+    private void generateHash(APDU apdu, byte[] buffer) {
+		byte[] buf = apdu.getBuffer(); //To parse the apdu
+        MessageDigest m_sha1 = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        // RESET HASH ENGINE
+        m_sha1.reset();
+        // AND OBTAIN RESULTING HASH VALUE
+        m_sha1.doFinal(buffer, (short) 0, (short) buffer.length, buf, (short) 0);
+        apdu.setOutgoingAndSend((short)0, (short)20);
+    }
 
     private short generateMAC(byte[] buffer, short offset) {
         signature.init(sessionKey, Signature.MODE_SIGN);
@@ -378,6 +407,7 @@ public class Mycard extends Applet {
 
         // generate session keys KDF
         generate_sessionKey();
+        //generateHash(apdu, arr);
         //Util.arrayCopyNonAtomic(sessionKeyData, (short) 0, buf, (short)(CHALLENGE_LENGTH*2), (short)(CHALLENGE_LENGTH*2));
         
         // generate MAC
@@ -617,7 +647,7 @@ public class Mycard extends Applet {
                 enterpin(apdu);
             break;
             case INS_GET_MASK:
-                getbalance(apdu);
+                get(apdu);
             break;
             case INS_RESET:
                 reset(apdu);
