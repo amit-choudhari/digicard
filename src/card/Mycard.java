@@ -135,12 +135,14 @@ public class Mycard extends Applet {
         return m_hash;
     }
 
-    private boolean checkHash(byte[] data, byte[] hash) {
+    private boolean checkHash(byte[] data, byte[] hash, APDU apdu) {
         byte[] h1;
         byte[] h2 = new byte[20];
         byte[] temp;
 
         h1 = generateHash(data, (short)data.length);
+		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+
         decrypt(hash);
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, h2, (short) 0, (short)20);
         if(Util.arrayCompare(h1, (short) 0, h2, (short) 0, (short) 20) == (byte)0) {
@@ -168,7 +170,7 @@ public class Mycard extends Applet {
         m_ramArray = new byte[100];
 
         m_cipher.init(sessionKey, Cipher.MODE_DECRYPT);
-        return 0;//m_cipher.doFinal(data, (short) 0, dataLen, m_ramArray, (short) 0);
+        return m_cipher.doFinal(data, (short) 0, dataLen, m_ramArray, (short) 0);
     }
 
     
@@ -177,25 +179,24 @@ public class Mycard extends Applet {
     //----------------------
 
     //Enrollment Funtions
-    private byte[] setname(APDU apdu, byte[] buffer, short byteRead) {
-
-		byte[] buff = apdu.getBuffer(); //To parse the apdu
+    private byte[] setname(byte[] buffer, short byteRead) {
+		//byte[] buff = apdu.getBuffer(); //To parse the apdu
         name = new byte[byteRead];
         //read name
-	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, name, (short)0, byteRead);
+	    Util.arrayCopy(buffer, (short)0, name, (short)0, byteRead);
         
         return name;
     }
 
-    private byte[] setsurname(APDU apdu, byte[] buffer, short byteRead) {
+    private byte[] setsurname(byte[] buffer, short byteRead) {
         surname = new byte[byteRead];
         //read name
-	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, surname, (short)0, byteRead);
+	    Util.arrayCopy(buffer, (short)0, surname, (short)0, byteRead);
         return surname;
     }
 
-    private byte[] setPIN(APDU apdu, byte[] buffer, short byteRead) {
-		byte[] buf = apdu.getBuffer(); //To parse the apdu
+    private byte[] setPIN(byte[] buffer, short byteRead) {
+		//byte[] buf = apdu.getBuffer(); //To parse the apdu
         pin = new OwnerPIN(MAX_PIN_RETRY, PIN_SIZE);
         byte[] arr = {(byte)byteRead};
 
@@ -204,25 +205,40 @@ public class Mycard extends Applet {
         
         // The installation parameters contain the PIN
         // initialization value
-        pin.update(buffer, (short)(ISO7816.OFFSET_CDATA), (byte)byteRead);
+        pin.update(buffer, (short)0, (byte)byteRead);
         return arr;
     }
 
-    private byte[] setUID(APDU apdu, byte[] buffer, short byteRead) {
+    private byte[] setUID(byte[] buffer, short byteRead) {
         uniqueID = new byte[byteRead];
-	    Util.arrayCopy(buffer, (short)ISO7816.OFFSET_CDATA, uniqueID, (short)0, byteRead);
+	    Util.arrayCopy(buffer, (short)0, uniqueID, (short)0, byteRead);
         return uniqueID;
     }
 
     private void enroll(APDU apdu) {
-        //TODO check state
+        if (state != STATE_ENROLL)
+            return;
 
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
         byte[] data = {};
 
-        byte numBytes = buffer[ISO7816.OFFSET_LC];
-        if (state != STATE_ENROLL)
-            return;
+        byte[] hash= new byte[24];
+        short dataLen = 0;
+        short hashLen = 0;
+        boolean res = false;
+        byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
+        byte[] temp= new byte[byteRead];
+
+        Util.arrayCopyNonAtomic(buffer, (short) ISO7816.OFFSET_CDATA, temp, (short) 0, (short)(byteRead));
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA+byteRead), hash, (short) 0, (short)24);
+        res = checkHash(temp, hash, apdu);
+
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA), temp, (short) 0, byteRead);
+        dataLen = decrypt(temp);
+        while (m_ramArray[(short)(dataLen-1)] == 0) {
+            dataLen = (short)(dataLen - (short)1);
+        }
 
         /*byte byteRead =
             (byte)(apdu.setIncomingAndReceive());
@@ -232,50 +248,67 @@ public class Mycard extends Applet {
 
 		switch (buffer[ISO7816.OFFSET_INS]) {
             case INS_ENROLL_name: 
-                data = setname(apdu, buffer, numBytes);
+                data = setname(m_ramArray, dataLen);
                 break;
             case INS_ENROLL_surname: 
-                data = setsurname(apdu, buffer, numBytes);
+                data = setsurname(m_ramArray, dataLen);
                 break;
             case INS_ENROLL_PIN: 
-                data = setPIN(apdu, buffer, numBytes);
+                data = setPIN(m_ramArray, dataLen);
                 break;
             case INS_ENROLL_UID: 
-                data = setUID(apdu, buffer, numBytes);
+                data = setUID(m_ramArray, dataLen);
                 break;
         }
         if (name.length > 0 && surname.length > 0 && pin != null && uniqueID.length > 0)
             state = STATE_USE;
-	    Util.arrayCopyNonAtomic(data,
-                                    (short)0,
-                                    buffer,
-                                    (short)0,
-                                    (short)data.length);
-        apdu.setOutgoingAndSend((short)0, (short)data.length);
+        dataLen = encrypt(data);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
 
     /* Credit Funtions */
     // Credit INS_CREDIT = 0x30
     private void credit(APDU apdu) {
         //TODO check state
-
+        
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        byte[] hash= new byte[24];
+        short dataLen = 0;
+        short hashLen = 0;
+        boolean res = false;
         byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
+        byte[] temp= new byte[byteRead];
+
+        Util.arrayCopyNonAtomic(buffer, (short) ISO7816.OFFSET_CDATA, temp, (short) 0, (short)(byteRead));
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA+byteRead), hash, (short) 0, (short)24);
+        res = checkHash(temp, hash, apdu);
+
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA), temp, (short) 0, byteRead);
+        dataLen = decrypt(temp);
+        while (m_ramArray[(short)(dataLen-1)] == 0) {
+            dataLen = (short)(dataLen - (short)1);
+        }
 
         // check pin verified
         if (!pin.isValidated())
             ISOException.throwIt(SW_INVALID_TRANSACTION);
 
-        byte creditamt = buffer[ISO7816.OFFSET_CDATA];
+        byte creditamt = m_ramArray[0];
         // TODO add checks on valid credits
         balance = (short)(balance + creditamt);
         byte[] arr = {creditamt};
-	    Util.arrayCopyNonAtomic(arr,
-                                    (short)0,
-                                    buffer,
-                                    (short)0,
-                                    (short)1);
-        apdu.setOutgoingAndSend((short)0, (short)1);
+
+        dataLen = encrypt(arr);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
 
     /* Debit Funtions */
@@ -284,24 +317,41 @@ public class Mycard extends Applet {
         //TODO check state
 
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        byte[] hash= new byte[24];
+        short dataLen = 0;
+        short hashLen = 0;
+        boolean res = false;
         byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
+        byte[] temp= new byte[byteRead];
+
+        Util.arrayCopyNonAtomic(buffer, (short) ISO7816.OFFSET_CDATA, temp, (short) 0, (short)(byteRead));
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA+byteRead), hash, (short) 0, (short)24);
+        res = checkHash(temp, hash, apdu);
+
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA), temp, (short) 0, byteRead);
+        dataLen = decrypt(temp);
+        while (m_ramArray[(short)(dataLen-1)] == 0) {
+            dataLen = (short)(dataLen - (short)1);
+        }
 
         // check pin verified
         if (!pin.isValidated())
             ISOException.throwIt(SW_INVALID_TRANSACTION);
 
-        byte debitamt = buffer[ISO7816.OFFSET_CDATA];
+        byte debitamt = m_ramArray[0];
         // TODO add checks on valid credits
         if ((short)(balance&0xff) < (short)(debitamt&0xff))
             ISOException.throwIt(SW_INVALID_TRANSACTION);
         balance = (short)(balance - debitamt);
-        byte[] arr = {debitamt,(byte)balance};
-	    Util.arrayCopyNonAtomic(arr,
-                                    (short)0,
-                                    buffer,
-                                    (short)0,
-                                    (short)2);
-        apdu.setOutgoingAndSend((short)0, (short)2);
+        byte[] arr = {debitamt};
+
+        dataLen = encrypt(arr);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
 
     // Validate PIN
@@ -310,35 +360,30 @@ public class Mycard extends Applet {
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
         short dataLen = 0;
         short hashLen = 0;
-
+        boolean res = false;
         byte byteRead = buffer[ISO7816.OFFSET_LC];
         byte[] msg = {};
-        byte[] temp= new byte[byteRead+5];
+        byte[] temp= new byte[byteRead];
 
-        Util.arrayCopyNonAtomic(buffer, (short) 0, temp, (short) 0, (short)(byteRead+5));
-        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_LC+byteRead), hash, (short) 0, (short)24);
-        boolean res = checkHash(temp, hash);
-        if (res) {
-	        Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
-            apdu.setOutgoingAndSend((short)0, (short)(PIN_SUCCESS.length));
-        }else {
-	        Util.arrayCopyNonAtomic(PIN_FAIL, (short)0, buffer, (short)0, (short)PIN_FAIL.length);
-            apdu.setOutgoingAndSend((short)0, (short)(PIN_FAIL.length));
-        }
+        Util.arrayCopyNonAtomic(buffer, (short) ISO7816.OFFSET_CDATA, temp, (short) 0, (short)(byteRead));
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA+byteRead), hash, (short) 0, (short)24);
+        res = checkHash(temp, hash, apdu);
 
         Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA), temp, (short) 0, byteRead);
         dataLen = decrypt(temp);
-	    Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
-        apdu.setOutgoingAndSend((short)0, (short)(PIN_SUCCESS.length));
-
-
-        if (pin.check(m_ramArray,(short)0, (byte)dataLen) == false) {
-            msg = PIN_FAIL;
-        } else {
-            msg = PIN_SUCCESS;
-	        //Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
+        while (m_ramArray[(short)(dataLen-1)] == 0) {
+            dataLen = (short)(dataLen - (short)1);
         }
-
+        if (res == true) {
+            if ((pin.check(m_ramArray,(short)0, (byte)dataLen) == false)) {
+                msg = PIN_FAIL;
+            } else {
+                msg = PIN_SUCCESS;
+	            //Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
+            }
+        } else {
+                msg = PIN_FAIL;
+        }
         dataLen = encrypt(msg);
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
         hash = generateHash(buffer,dataLen);
@@ -350,18 +395,22 @@ public class Mycard extends Applet {
     /* Get Information Functions */
     // Get balance INS_GET_BAL = 0x41
     private void getbalance(APDU apdu) {
+        //byte[] hash= new byte[20];
+
         byte[] temp= new byte[2];
-        byte[] hash= new byte[20];
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        byte[] hash= new byte[24];
         short dataLen = 0;
         short hashLen = 0;
+        boolean res = false;
+        byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
 
         // check pin verified
         if (!pin.isValidated())
             ISOException.throwIt(SW_INVALID_TRANSACTION);
 
-        temp[0] = (byte)(balance >> 8);
-        temp[1] = (byte)(balance & 0xFF);
+        Util.setShort(temp, (short) 0, balance);
 
         dataLen = encrypt(temp);
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
@@ -375,6 +424,13 @@ public class Mycard extends Applet {
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
         short offset = 0;
         byte[] nextline = {0x0A};
+        byte[] temp;
+        byte[] hash= new byte[24];
+        short dataLen = 0;
+        short hashLen = 0;
+        boolean res = false;
+        byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
 
 	    Util.arrayCopyNonAtomic(uniqueID, (short)0, buffer, offset, (short)uniqueID.length);
         offset += uniqueID.length;
@@ -391,7 +447,15 @@ public class Mycard extends Applet {
 	    Util.arrayCopyNonAtomic(nextline, (short)0, buffer, offset, (short)nextline.length);
         offset += nextline.length;
 
-        apdu.setOutgoingAndSend((short)0, offset);
+        temp= new byte[offset];
+	    Util.arrayCopyNonAtomic(buffer, (short)0, temp, (short)0, offset);
+        //apdu.setOutgoingAndSend((short)0, (short)(offset));
+        dataLen = encrypt(temp);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
 
     private void get(APDU apdu) {

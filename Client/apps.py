@@ -60,8 +60,11 @@ class user_apps:
         self.card = Control()
         self.card.connect()
         self.tx_amt = 0
+        self.sc  = secure_channel(self.card)
+        self.sc.open()
 
     def close(self):
+        self.sc.close()
         self.card.disconnect()
 
     def enroll_name(self):
@@ -71,8 +74,11 @@ class user_apps:
         ins = [INS_ENROLL_name]
         data = name
         size = [len(name)]
-        res = self.card.send(ins, data, size)
-        print(res)
+        res = self.sc.send(self.card, ins, data, size)
+        mess = ''
+        for e in res:
+            mess += chr(e)
+        print("enrolled name:",mess)
         print("-------")
     
     def enroll_surname(self):
@@ -82,8 +88,11 @@ class user_apps:
         ins = [INS_ENROLL_surname]
         data = surname
         size = [len(surname)]
-        res = self.card.send(ins, data, size)
-        print(res)
+        res = self.sc.send(self.card, ins, data, size)
+        mess = ''
+        for e in res:
+            mess += chr(e)
+        print("enrolled surname:",mess)
         print("-------")
     
     def enroll_pin(self):
@@ -93,8 +102,11 @@ class user_apps:
         ins = [INS_ENROLL_PIN]
         data = pin
         size = [len(pin)]
-        res = self.card.send(ins, data, size)
-        print("Enrolled Pin",res)
+        res = self.sc.send(self.card, ins, data, size)
+        if res[0] == 6:
+            print("Enrolled PIN!")
+        else:
+            print("Failed to enroll PIN")
         print("-------")
 
     def enroll_uid(self):
@@ -104,7 +116,7 @@ class user_apps:
         ins = [INS_ENROLL_UID]
         data = uid
         size = [len(uid)]
-        res = self.card.send(ins, data, size)
+        res = self.sc.send(self.card, ins, data, size)
         print("Enrolled UID",res)
         print("-------")
     
@@ -114,7 +126,7 @@ class user_apps:
         ins = [INS_GET_INFO]
         data = []
         size = [0]
-        res = self.card.send(ins, data, size)
+        res = self.sc.send(self.card, ins, data, size)
         for e in res:
             mess += chr(e)
         print("Card Details")
@@ -129,8 +141,11 @@ class user_apps:
         ins = [INS_VERIFY_PIN]
         data = pin
         size = [len(pin)]
-        res = self.card.send(ins, data, size)
-        print("verified pin",res)
+        res = self.sc.send(self.card, ins, data, size)
+        mess = ''
+        for e in res:
+            mess += chr(e)
+        print("Status: ",mess)
         print("-------")
     
     def debit(self, amt=0):
@@ -141,7 +156,7 @@ class user_apps:
         ins = [INS_DEBIT]
         data = amt
         size = [len(amt)]
-        s_amt = self.card.send(ins, data, size)
+        s_amt = self.sc.send(self.card, ins, data, size)
         print("Debit:",s_amt)
         print("-------")
         return s_amt
@@ -153,7 +168,7 @@ class user_apps:
         ins = [INS_CREDIT]
         data = amt
         size = [len(amt)]
-        s_amt = self.card.send(ins, data, size)
+        s_amt = self.sc.send(self.card, ins, data, size)
         print("Credit: ",s_amt)
         print("-------")
         return s_amt
@@ -165,7 +180,7 @@ class user_apps:
         ins = [INS_GET_BAL]
         data = amt
         size = [len(amt)]
-        amt = self.card.send(ins, data, size)
+        amt = self.sc.send(self.card, ins, data, size)
         print("Balance: ",amt)
         print("-------")
         return amt
@@ -187,6 +202,15 @@ class user_apps:
         print("End session ",amt)
 
     def test(self):
-        sc  = secure_channel(self.card)
-        sc.open()
-        sc.send(self.card)
+        pin = array.array('b',input("Enter PIN:").encode()).tolist()
+        print(pin)
+        data = pin
+        ins = [INS_VERIFY_PIN]
+
+        self.sc.send(self.card, ins, data, size)
+
+        mess = ''
+        for e in txt:
+            mess += chr(e)
+        print("Balance: ",mess)
+        print("-------")

@@ -89,6 +89,7 @@ class secure_channel:
     def gen_signature(self, data):
         print(data)
         h = hashlib.sha1(bytearray(data)).digest()
+        print("hash",list(h))
         h = array.array('B',h).tolist()
         return self.cipher_session.encrypt(h)
 
@@ -103,24 +104,24 @@ class secure_channel:
         else:
             return False
 
-    def send(self, card):
+    def send(self, card, ins, data, size):
         print(inspect.stack()[0].function)
-        pin = array.array('b',input("Enter PIN:").encode()).tolist()
-        print(pin)
-        ins = [INS_VERIFY_PIN]
-        data = pin
-        c = self.cipher_session.encrypt(pin)
+        c = self.cipher_session.encrypt(data)
         print(c)
         data = array.array('B',c).tolist()
+        #tmp = self.cipher_session.decrypt(data)
+        #txt = array.array('B',tmp).tolist()
+        #print(txt)
+        #return
         size = [len(data)]
-        payload = CLA + ins + P1_P2 + size + data
+        payload = data
         sign = self.gen_signature(payload)
         data = data + array.array('B',sign).tolist()
 
-        resp = card.send(ins, data, [len(data)])
+        resp = card.send(ins, data, size)
         print(len(resp))
         print(resp)
-        return
+        #return
         if (self.check_signature(resp)):
             print("Integrity check passed.. decrypting")
         else:
@@ -128,10 +129,8 @@ class secure_channel:
             return False
 
         txt = self.cipher_session.decrypt(resp[:len(resp)-hashLen])
-        txt = array.array('b',txt).tolist()
-        mess = ''
-        for e in txt:
-            mess += chr(e)
-        print("Balance: ",mess)
-        print("-------")
-        return resp
+        txt = array.array('B',txt).tolist()
+        while txt[-1] == 0:
+            txt.pop(-1)
+
+        return txt
