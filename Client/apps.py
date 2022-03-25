@@ -117,7 +117,8 @@ class user_apps:
         res = self.card.send(ins, data, size)
         for e in res:
             mess += chr(e)
-        print("INFO: ",mess)
+        print("Card Details")
+        print(mess)
         print("-------")
         pass
 

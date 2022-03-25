@@ -83,7 +83,7 @@ public class Mycard extends Applet {
     private byte[] cardChallenge;
     private byte[] hostChallenge;
     private Signature signature;
-    final static short CHALLENGE_LENGTH = (short) 4;
+    final static short CHALLENGE_LENGTH = (short) 12;
     final static short UID_LENGTH = (short) 8;
     /**
      * Unique ID
@@ -95,8 +95,12 @@ public class Mycard extends Applet {
     final static short LENGTH_DES_BYTE = (short) (KeyBuilder.LENGTH_DES / 8);
     private byte[] keyDerivationData; // Transient
     private byte[] sessionKeyData; // Transient
+    private byte[] m_hash;
     private DESKey sessionKey; // Transient key
     private MessageDigest m_messagedigest;
+    byte[] staticKeyData = {(byte)0xDE, (byte)0xAD, (byte)0xBE, (byte)0xEF, (byte)0xCA, (byte)0xFE, (byte)0x00, (byte)0x01,
+                         (byte)0xAA, (byte)0xAD, (byte)0xBE, (byte)0xEF, (byte)0xCA, (byte)0xFE, (byte)0x00, (byte)0x02, 
+                         (byte)0xBB, (byte)0xAD, (byte)0xBE, (byte)0xEF, (byte)0xCA, (byte)0xFE, (byte)0x00, (byte)0x03};
 
 
 
@@ -117,12 +121,56 @@ public class Mycard extends Applet {
 	            (short) (2 * keyDerivationData.length),
 	            JCSystem.CLEAR_ON_DESELECT);
 
-        signature = Signature.getInstance(Signature.ALG_DES_MAC8_ISO9797_M2,
-                false);
+        signature = Signature.getInstance(Signature.ALG_DES_MAC8_ISO9797_M1, false);
 
         state = STATE_ENROLL;
 	    register(); //Mandatory to register 
     }
+
+    private byte[] generateHash(byte[] buffer, short dataLen) {
+        m_hash = new byte[20];
+        MessageDigest m_sha1 = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+        m_sha1.reset();
+        m_sha1.doFinal(buffer, (short) 0, dataLen, m_hash, (short) 0);
+        return m_hash;
+    }
+
+    private boolean checkHash(byte[] data, byte[] hash) {
+        byte[] h1;
+        byte[] h2 = new byte[20];
+        byte[] temp;
+
+        h1 = generateHash(data, (short)data.length);
+        decrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, h2, (short) 0, (short)20);
+        if(Util.arrayCompare(h1, (short) 0, h2, (short) 0, (short) 20) == (byte)0) {
+            return true;
+        }else {
+            return false;
+        }
+    }
+
+    // Encrypt outgoing data
+    private short encrypt(byte[] data) {
+        short dataLen = (short)data.length;
+        m_ramArray = new byte[100];
+
+        m_cipher.init(sessionKey, Cipher.MODE_ENCRYPT);
+        //byte[] data = {'A','M','I','T','4','3','2','1'};
+        //if ((dataLen % 8) != 0) ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+        // ENCRYPT INCOMING BUFFER
+        return m_cipher.doFinal(data, (short) 0, dataLen, m_ramArray, (short) 0);
+    }
+
+    // Decrypt incoming data
+    private short decrypt(byte[] data) {
+        short dataLen = (short)data.length;
+        m_ramArray = new byte[100];
+
+        m_cipher.init(sessionKey, Cipher.MODE_DECRYPT);
+        return 0;//m_cipher.doFinal(data, (short) 0, dataLen, m_ramArray, (short) 0);
+    }
+
     
     //----------------------
     // Helper Functions
@@ -258,42 +306,69 @@ public class Mycard extends Applet {
 
     // Validate PIN
     private void enterpin(APDU apdu) {
+        byte[] hash= new byte[24];
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
+        short dataLen = 0;
+        short hashLen = 0;
 
         byte byteRead = buffer[ISO7816.OFFSET_LC];
+        byte[] msg = {};
+        byte[] temp= new byte[byteRead+5];
 
-        if (pin.check(buffer,(short)(ISO7816.OFFSET_CDATA), byteRead) == false) {
-	        Util.arrayCopyNonAtomic(PIN_FAIL,
-                                        (short)0,
-                                        buffer,
-                                        (short)0,
-                                        (short)PIN_FAIL.length);
-            apdu.setOutgoingAndSend((short)0, (short)PIN_FAIL.length);
-        } else {
-	        Util.arrayCopyNonAtomic(PIN_SUCCESS,
-                                        (short)0,
-                                        buffer,
-                                        (short)0,
-                                        (short)PIN_SUCCESS.length);
-            apdu.setOutgoingAndSend((short)0, (short)PIN_SUCCESS.length);
+        Util.arrayCopyNonAtomic(buffer, (short) 0, temp, (short) 0, (short)(byteRead+5));
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_LC+byteRead), hash, (short) 0, (short)24);
+        boolean res = checkHash(temp, hash);
+        if (res) {
+	        Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
+            apdu.setOutgoingAndSend((short)0, (short)(PIN_SUCCESS.length));
+        }else {
+	        Util.arrayCopyNonAtomic(PIN_FAIL, (short)0, buffer, (short)0, (short)PIN_FAIL.length);
+            apdu.setOutgoingAndSend((short)0, (short)(PIN_FAIL.length));
         }
+
+        Util.arrayCopyNonAtomic(buffer, (short) (ISO7816.OFFSET_CDATA), temp, (short) 0, byteRead);
+        dataLen = decrypt(temp);
+	    Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
+        apdu.setOutgoingAndSend((short)0, (short)(PIN_SUCCESS.length));
+
+
+        if (pin.check(m_ramArray,(short)0, (byte)dataLen) == false) {
+            msg = PIN_FAIL;
+        } else {
+            msg = PIN_SUCCESS;
+	        //Util.arrayCopyNonAtomic(PIN_SUCCESS, (short)0, buffer, (short)0, (short)PIN_SUCCESS.length);
+        }
+
+        dataLen = encrypt(msg);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
 
     /* Get Information Functions */
     // Get balance INS_GET_BAL = 0x41
     private void getbalance(APDU apdu) {
-        // check state
-
+        byte[] temp= new byte[2];
+        byte[] hash= new byte[20];
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
-        byte byteRead = buffer[ISO7816.OFFSET_LC];
+        short dataLen = 0;
+        short hashLen = 0;
 
         // check pin verified
         if (!pin.isValidated())
             ISOException.throwIt(SW_INVALID_TRANSACTION);
 
-        buffer[0] = (byte)(balance >> 8);
-        buffer[1] = (byte)(balance & 0xFF);
-        apdu.setOutgoingAndSend((short)0, (short)2);
+        temp[0] = (byte)(balance >> 8);
+        temp[1] = (byte)(balance & 0xFF);
+
+        dataLen = encrypt(temp);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, (short) 0, dataLen);
+        hash = generateHash(buffer,dataLen);
+        hashLen = encrypt(hash);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, buffer, dataLen, hashLen);
+        apdu.setOutgoingAndSend((short)0, (short)(dataLen+hashLen));
     }
     
     private void getinfo(APDU apdu) {
@@ -317,8 +392,8 @@ public class Mycard extends Applet {
         offset += nextline.length;
 
         apdu.setOutgoingAndSend((short)0, offset);
-
     }
+
     private void get(APDU apdu) {
 		byte[] buffer = apdu.getBuffer(); //To parse the apdu
 
@@ -332,55 +407,17 @@ public class Mycard extends Applet {
         }
     }
 
-
-    private void generateHash(APDU apdu, byte[] buffer) {
-		byte[] buf = apdu.getBuffer(); //To parse the apdu
-        MessageDigest m_sha1 = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
-        // RESET HASH ENGINE
-        m_sha1.reset();
-        // AND OBTAIN RESULTING HASH VALUE
-        m_sha1.doFinal(buffer, (short) 0, (short) buffer.length, buf, (short) 0);
-        apdu.setOutgoingAndSend((short)0, (short)20);
-    }
-
-    private short generateMAC(byte[] buffer, short offset) {
-        signature.init(sessionKey, Signature.MODE_SIGN);
-        short sigLength = signature.sign(buffer, (short) 0, offset, buffer, offset);
-        return (short) (sigLength);
-    }
-
-    private boolean checkMAC(byte[] buffer) {
-        byte numBytes = buffer[ISO7816.OFFSET_LC];
-
-        if (numBytes <= MAC_LENGTH) {
-            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-        }
-
-        // Initialize signature with current session key for verification
-        signature.init(sessionKey, Signature.MODE_VERIFY);
-        // Verify request message signature
-        return signature.verify(buffer, ISO7816.OFFSET_CDATA,
-                (short) (numBytes - MAC_LENGTH), buffer,
-                (short) (ISO7816.OFFSET_CDATA + numBytes - MAC_LENGTH),
-	        MAC_LENGTH);
-    }
-
     private void generate_symm_key() {
-        staticKey = (DESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES, false);
-        sessionKey = (DESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES, false);
-        RandomData rand = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
+        staticKey = (DESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES3_3KEY, false);
+        sessionKey = (DESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_DES, KeyBuilder.LENGTH_DES3_3KEY, false);
         // Static key
-        byte[] buffer = {(byte)0xDE, (byte)0xAD, (byte)0xBE, (byte)0xEF, (byte)0xCA, (byte)0xFE, (byte)0x00, (byte)0x01};
-        //buffer = JCSystem.makeTransientByteArray(LENGTH_DES_BYTE, JCSystem.CLEAR_ON_DESELECT);
-        //rand.generateData(buffer, (short) 0, LENGTH_DES_BYTE);
-        staticKey.setKey(buffer, (short) 0);
+        staticKey.setKey(staticKeyData, (short)0);
         //encrypt dummy data
-        m_cipher = Cipher.getInstance(Cipher.ALG_DES_ECB_NOPAD, false);
-        // INIT CIPHER WITH KEY FOR ENCRYPT DIRECTION
-        m_cipher.init(staticKey, Cipher.MODE_ENCRYPT);
+        m_cipher = Cipher.getInstance(Cipher.ALG_DES_ECB_ISO9797_M1, false);
     }
 
     private void generate_sessionKey() {
+        m_cipher.init(staticKey, Cipher.MODE_ENCRYPT);
         // CHECK EXPECTED LENGTH (MULTIPLY OF 64 bites)
         //if ((dataLen % 8) != 0) ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         m_cipher.doFinal(keyDerivationData, (short) 0, (short) keyDerivationData.length,
@@ -411,8 +448,8 @@ public class Mycard extends Applet {
         //Util.arrayCopyNonAtomic(sessionKeyData, (short) 0, buf, (short)(CHALLENGE_LENGTH*2), (short)(CHALLENGE_LENGTH*2));
         
         // generate MAC
-        signLen = generateMAC(buf,(short)(CHALLENGE_LENGTH*2));
-        apdu.setOutgoingAndSend((short)0, (short)(CHALLENGE_LENGTH*2+signLen));
+        //signLen = generateMAC(buf,(short)(CHALLENGE_LENGTH*2));
+        apdu.setOutgoingAndSend((short)0, (short)(CHALLENGE_LENGTH*2));
     }
 
     private void auth_fini(APDU apdu, byte[] buffer, short byteRead) {
@@ -488,7 +525,7 @@ public class Mycard extends Applet {
         (byte)0xcb, (byte)0x7c, (byte)0x38, (byte)0xb6, (byte)0x9a, (byte)0x4b,
         (byte)0x28, (byte)0x01};
 
-    private byte[] m_ramArray = new byte[0x100];
+    private byte[] m_ramArray;
 
 
     private void generate_asymm_key(APDU apdu) {
@@ -549,27 +586,6 @@ public class Mycard extends Applet {
 
     }
 
-    // ENCRYPT INCOMING BUFFER
-    void encrypt(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        //short dataLen = apdu.setIncomingAndReceive();
-        byte[] data = {'A','M','I','T','4','3','2','1'};
-        short dataLen = (short)data.length;
-        // CHECK EXPECTED LENGTH (MULTIPLY OF 64 bites)
-        if ((dataLen % 8) != 0) ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-        // ENCRYPT INCOMING BUFFER
-        m_cipher.doFinal(data, (short) 0, dataLen, m_ramArray, (short) 0);
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, (short) 0, dataLen);
-        // SEND OUTGOING BUFFER
-	    /*Util.arrayCopyNonAtomic(PIN_SUCCESS,
-                                    (short)0,
-                                    apdubuf,
-                                    (short)0,
-                                    (short)PIN_SUCCESS.length);
-        */ 
-        apdu.setOutgoingAndSend((short)0, dataLen);
-    }
 
     private void initialize_session(APDU apdu) {
 
@@ -582,7 +598,7 @@ public class Mycard extends Applet {
 
         //staticKey.getKey(buf, (short) 0);
 	    //Util.arrayCopyNonAtomic(buffer, (short)0, buf, (short)0, (short)LENGTH_DES_BYTE);
-        encrypt(apdu);
+        //encrypt(apdu);
         apdu.setOutgoingAndSend((short)0, LENGTH_DES_BYTE);
 
         // generate challenge

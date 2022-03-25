@@ -8,6 +8,8 @@ from smartcard.CardMonitoring import CardMonitor, CardObserver
 from smartcard.util import toHexString, PACK, toBytes,HexListToBinString, BinStringToHexList
 from Crypto.Cipher import DES3
 from Crypto.Cipher import DES
+import hashlib
+#from des import DesKey
 
 #          CLA  INS  P1   P2   Lc  |--------Data------------->
 AID =     [0x00,0xA4,0x04,0x00,0x08,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x07]
@@ -23,8 +25,12 @@ P1_P2 =   [0x00, 0x00]
 INS_AUTH_INIT = 0x50
 INS_AUTH_FINI = 0x51
 INS_GET_BAL = 0x41;
-                    
-master_key = [0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0x00,0x01]
+INS_VERIFY_PIN = 0x10
+
+hashLen = 24 
+master_key = [0xDE,0xAD,0xBE,0xEF,0xCA,0xFE,0x00,0x01,
+        0xAA,0xAD,0xBE,0xEF,0xCA,0xFE,0x00,0x02,
+        0xBB,0xAD,0xBE,0xEF,0xCA,0xFE,0x00,0x03]
 
 class Crypto:
     def __init__(self, cipher, key = 0):
@@ -34,15 +40,22 @@ class Crypto:
 
     def gencipher(self):
         key_ = bytearray(self.key)
-        self.zdes = DES.new(key_, DES.MODE_ECB)
+        self.zdes = DES3.new(key_, DES.MODE_ECB)
         pass
 
     def encrypt(self, data):
+        if len(data) < len(self.key):
+            pad = [0x0] * (len(self.key) - len(data))
+            print(pad)
+            data += pad
         data_ = bytearray(data)
         cipherText = self.zdes.encrypt(data_)
         return cipherText
 
-    def decrypt():
+    def decrypt(self, data):
+        data_ = bytearray(data)
+        text = self.zdes.decrypt(data_)
+        return text
         pass
 
     def gen_mac(self):
@@ -55,7 +68,7 @@ class secure_channel:
 
     def open(self):
         # generate host challenge
-        chal_h = list(token_bytes(4))
+        chal_h = list(token_bytes(12))
         out = self.card.send([INS_AUTH_INIT], chal_h, [len(chal_h)])
         chal_hc = out[:len(chal_h)*2]
         print(chal_hc)
@@ -67,23 +80,58 @@ class secure_channel:
         print(list(self.sessionKey))
         print(out[len(chal_h)*2:])
         self.cipher_session = Crypto('DES', self.sessionKey)
+        self.cipher_session.gencipher()
         pass
 
     def close(self):
         pass
 
-    def gen_signature(self):
-        pass
+    def gen_signature(self, data):
+        print(data)
+        h = hashlib.sha1(bytearray(data)).digest()
+        h = array.array('B',h).tolist()
+        return self.cipher_session.encrypt(h)
+
+    def check_signature(self, data):
+        h1 = self.cipher_session.decrypt(data[len(data)-hashLen:])
+        #h1 = hashlib.sha1(Htxt).digest()
+        h2 = hashlib.sha1(bytearray(data[:len(data)-hashLen])).digest()
+        print(list(h1)[:20])
+        print(list(h2))
+        if(list(h1)[:20] == list(h2)):
+            return True
+        else:
+            return False
 
     def send(self, card):
         print(inspect.stack()[0].function)
-        amt = []
-        print(amt)
-        ins = [INS_GET_BAL]
-        data = amt
-        size = [len(amt)]
-        amt = card.send(ins, data, size)
-        print("Balance: ",amt)
+        pin = array.array('b',input("Enter PIN:").encode()).tolist()
+        print(pin)
+        ins = [INS_VERIFY_PIN]
+        data = pin
+        c = self.cipher_session.encrypt(pin)
+        print(c)
+        data = array.array('B',c).tolist()
+        size = [len(data)]
+        payload = CLA + ins + P1_P2 + size + data
+        sign = self.gen_signature(payload)
+        data = data + array.array('B',sign).tolist()
+
+        resp = card.send(ins, data, [len(data)])
+        print(len(resp))
+        print(resp)
+        return
+        if (self.check_signature(resp)):
+            print("Integrity check passed.. decrypting")
+        else:
+            print("Integrity check failed")
+            return False
+
+        txt = self.cipher_session.decrypt(resp[:len(resp)-hashLen])
+        txt = array.array('b',txt).tolist()
+        mess = ''
+        for e in txt:
+            mess += chr(e)
+        print("Balance: ",mess)
         print("-------")
-        return amt
-        pass
+        return resp
