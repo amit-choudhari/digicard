@@ -1,5 +1,5 @@
-# digicard
-Digital card for festival (Project)
+# Digicard
+Digital card for festival (Project - Ecole polytechnique)
 
 ```
 sirius@ubuntu:~/workspace/IPP/INF648/Projects/digicard/Client$ python3 main.py 
