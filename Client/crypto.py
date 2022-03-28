@@ -46,7 +46,7 @@ class Crypto:
     def encrypt(self, data):
         if len(data) < len(self.key):
             pad = [0x0] * (len(self.key) - len(data))
-            print(pad)
+            #print(pad)
             data += pad
         data_ = bytearray(data)
         cipherText = self.zdes.encrypt(data_)
@@ -71,14 +71,14 @@ class secure_channel:
         chal_h = list(token_bytes(12))
         out = self.card.send([INS_AUTH_INIT], chal_h, [len(chal_h)])
         chal_hc = out[:len(chal_h)*2]
-        print(chal_hc)
+        #print("[host|challenge]:",chal_hc)
 
         # generate session Keys
         self.cipher_des = Crypto('DES', master_key)
         self.cipher_des.gencipher()
         self.sessionKey = self.cipher_des.encrypt(chal_hc)
-        print(list(self.sessionKey))
-        print(out[len(chal_h)*2:])
+        #print("S_Key: ",list(self.sessionKey))
+        #print(out[len(chal_h)*2:])
         self.cipher_session = Crypto('DES', self.sessionKey)
         self.cipher_session.gencipher()
         pass
@@ -87,9 +87,9 @@ class secure_channel:
         pass
 
     def gen_signature(self, data):
-        print(data)
+        #print(data)
         h = hashlib.sha1(bytearray(data)).digest()
-        print("hash",list(h))
+        #print("hash",list(h))
         h = array.array('B',h).tolist()
         return self.cipher_session.encrypt(h)
 
@@ -97,17 +97,18 @@ class secure_channel:
         h1 = self.cipher_session.decrypt(data[len(data)-hashLen:])
         #h1 = hashlib.sha1(Htxt).digest()
         h2 = hashlib.sha1(bytearray(data[:len(data)-hashLen])).digest()
-        print(list(h1)[:20])
-        print(list(h2))
+        #print(list(h1)[:20])
+        #print(list(h2))
         if(list(h1)[:20] == list(h2)):
             return True
         else:
             return False
 
     def send(self, card, ins, data, size):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         c = self.cipher_session.encrypt(data)
-        print(c)
+        #print("Encrypted data:",c)
+        #print(c)
         data = array.array('B',c).tolist()
         #tmp = self.cipher_session.decrypt(data)
         #txt = array.array('B',tmp).tolist()
@@ -116,11 +117,14 @@ class secure_channel:
         size = [len(data)]
         payload = data
         sign = self.gen_signature(payload)
+        #print("MAC:",sign)
         data = data + array.array('B',sign).tolist()
 
+        #print("Send...")
         resp = card.send(ins, data, size)
-        print(len(resp))
-        print(resp)
+        #print(len(resp))
+        #print(resp)
+        #print("response...")
         #return
         if (self.check_signature(resp)):
             print("Integrity check passed.. decrypting")

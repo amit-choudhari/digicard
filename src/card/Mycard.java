@@ -65,7 +65,7 @@ public class Mycard extends Applet {
     // Messages
     private static final byte[] MESS_1 = {'H','e','l','l','o',' ','m','y',' ','n','a','m','e',' ','i','s',' ','A','m','i','t'};
     private static final byte[] PIN_SUCCESS = {'c','o','d','e',' ','b','o','n','!'};
-    private static final byte[] PIN_FAIL = {'c','o','d','e',' ','p','a',' ','b','o','n'};
+    private static final byte[] PIN_FAIL = {'c','o','d','e',' ','p','a','s',' ','b','o','n'};
     private static final byte[] CARD_BLOCK = {'B','L','O','C','K','E','D'};
     private static final byte[] key = {'B','L','O','C','K','E','D'};
     
@@ -544,17 +544,10 @@ public class Mycard extends Applet {
         // TODO change state
 
     }
-    
+
     private void reset(APDU apdu) {
-
+        // TODO reset the card with admint persmission
     }
-
-    private void generate_keyderivationdata() {
-
-    }
-
-
-
 
     private RSAPrivateKey m_privateKey;
     private RSAPublicKey m_publicKey;
@@ -622,60 +615,6 @@ public class Mycard extends Applet {
             apdu.setOutgoingAndSend((short)0, (short)1);
             ISOException.throwIt((short) ((short) 0x6B00 | reason));
          }
-    }
-
-    void sign(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-            byte[] data = {'A','M','I','T','4','3','2','1'};
-            short dataLen = (short)data.length;
-            // INIT WITH PRIVATE KEY
-            m_sign.init(m_privateKey, Signature.MODE_SIGN);
-            // SIGN INCOMING BUFFER
-            m_signLen = m_sign.sign(data, (byte) 0, (byte) dataLen, apdubuf, (byte) 0);
-            apdu.setOutgoingAndSend((short)0, m_sign.getLength());
-
-    }
-
-    void verify(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-            byte[] data = {'A','M','I','T','4','3','2','1'};
-            short dataLen = (short)data.length;
-            m_sign.init(m_publicKey,Signature.MODE_VERIFY);
-            boolean verified=false;
-            verified = m_sign.verify(data, (short) 0, dataLen, apdubuf,(short)0,m_signLen);
-            //In either case m1 is consumed by this applet
-            if(!verified){
-                ISOException.throwIt(ERROR_VERIFICATION_FAILED);
-            }
-
-    }
-
-
-    private void initialize_session(APDU apdu) {
-
-		//byte[] buf = apdu.getBuffer(); //To parse the apdu
-
-        // Create cipher
-        generate_symm_key();
-        generate_asymm_key(apdu);
-        sign(apdu);
-
-        //staticKey.getKey(buf, (short) 0);
-	    //Util.arrayCopyNonAtomic(buffer, (short)0, buf, (short)0, (short)LENGTH_DES_BYTE);
-        //encrypt(apdu);
-        apdu.setOutgoingAndSend((short)0, LENGTH_DES_BYTE);
-
-        // generate challenge
-        
-        // generate Keyderivation
-        
-        // generate session key
-
-        // append card challenge
-        
-        // append status word
-        
-        // sign response 
     }
 
     // ---------------------------------

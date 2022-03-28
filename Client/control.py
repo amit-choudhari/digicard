@@ -26,9 +26,9 @@ class Control:
 
     def send(self, ins, data, size):
         payload = CLA + ins + P1_P2 + size + data
-        print("tx:",payload)
+        #print("tx:",payload)
         out, sw1, sw2 = self.connection.transmit(payload)
-        print("rx:",out)
+        #print("rx:",out)
         #print("")
         return out
 

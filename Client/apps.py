@@ -66,11 +66,12 @@ class user_apps:
     def close(self):
         self.sc.close()
         self.card.disconnect()
+        print("Enjoy the Festival!!")
 
     def enroll_name(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         name = array.array('b',input("Enter Name:").encode()).tolist()
-        print(name)
+        #print(name)
         ins = [INS_ENROLL_name]
         data = name
         size = [len(name)]
@@ -82,9 +83,9 @@ class user_apps:
         print("-------")
     
     def enroll_surname(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         surname = array.array('b',input("Enter Surname:").encode()).tolist()
-        print(surname)
+        #print(surname)
         ins = [INS_ENROLL_surname]
         data = surname
         size = [len(surname)]
@@ -96,9 +97,9 @@ class user_apps:
         print("-------")
     
     def enroll_pin(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         pin = array.array('b',input("Enter New PIN:").encode()).tolist()
-        print(pin)
+        #print(pin)
         ins = [INS_ENROLL_PIN]
         data = pin
         size = [len(pin)]
@@ -110,9 +111,9 @@ class user_apps:
         print("-------")
 
     def enroll_uid(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         uid = array.array('b',input("Enter New UID:").encode()).tolist()
-        print(uid)
+        #print(uid)
         ins = [INS_ENROLL_UID]
         data = uid
         size = [len(uid)]
@@ -121,7 +122,7 @@ class user_apps:
         print("-------")
     
     def get_details(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         mess = ''
         ins = [INS_GET_INFO]
         data = []
@@ -135,9 +136,9 @@ class user_apps:
         pass
 
     def verify_pin(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         pin = array.array('b',input("Enter PIN:").encode()).tolist()
-        print(pin)
+        #print(pin)
         ins = [INS_VERIFY_PIN]
         data = pin
         size = [len(pin)]
@@ -149,44 +150,44 @@ class user_apps:
         print("-------")
     
     def debit(self, amt=0):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         if amt == 0:
             amt = [int(input("Enter amount:"))]
-        print(amt)
+        #print(amt)
         ins = [INS_DEBIT]
         data = amt
         size = [len(amt)]
         s_amt = self.sc.send(self.card, ins, data, size)
-        print("Debit:",s_amt)
+        print("Debit:",s_amt[0])
         print("-------")
         return s_amt
     
     def credit(self, amt=0):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         if amt == 0:
             amt = [int(input("Enter amount:"))]
         ins = [INS_CREDIT]
         data = amt
         size = [len(amt)]
         s_amt = self.sc.send(self.card, ins, data, size)
-        print("Credit: ",s_amt)
+        print("Credit: ",s_amt[0])
         print("-------")
         return s_amt
     
     def balance(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         amt = []
-        print(amt)
+        #print(amt)
         ins = [INS_GET_BAL]
         data = amt
         size = [len(amt)]
         amt = self.sc.send(self.card, ins, data, size)
-        print("Balance: ",amt)
+        print("Balance: ",amt[1])
         print("-------")
         return amt
         
     def exchange(self):
-        print(inspect.stack()[0].function)
+        #print(inspect.stack()[0].function)
         # Debit
         amt = self.debit()
         self.close()
