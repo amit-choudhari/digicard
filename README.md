@@ -1,7 +1,7 @@
 # digicard
 Digital card for festival (Project)
 
-'''
+```
 sirius@ubuntu:~/workspace/IPP/INF648/Projects/digicard/Client$ python3 main.py 
 ========================
 commands
@@ -70,4 +70,4 @@ Balance:  90
 Select cmd:11
 Enjoy the Festival!!
 
-'''
+```
